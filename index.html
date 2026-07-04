@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>SYSTEM</title>
+<meta name="theme-color" content="#05070d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SYSTEM">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/favicon-32.png">
+<style>
+:root{
+  --bg:#05070d;
+  --panel:#0d1420;
+  --panel-2:#101a2c;
+  --line:rgba(76,224,255,0.28);
+  --cyan:#4ce0ff;
+  --cyan-dim:#2b8fae;
+  --danger:#ff4c6d;
+  --gold:#ffd76c;
+  --good:#7cffb2;
+  --text:#e8f4ff;
+  --muted:#6b7d94;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono","Consolas","Courier New",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(76,224,255,0.08), transparent 55%),
+    var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  -webkit-tap-highlight-color:transparent;
+  overscroll-behavior:none;
+}
+#app{
+  max-width:480px;
+  margin:0 auto;
+  min-height:100vh;
+  min-height:100dvh;
+  display:flex;
+  flex-direction:column;
+  position:relative;
+}
+/* scanline ambience */
+#app::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background:repeating-linear-gradient(
+    to bottom,
+    rgba(76,224,255,0.02) 0px,
+    rgba(76,224,255,0.02) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  z-index:0;
+}
+.topbar{
+  padding:16px 18px 10px;
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  border-bottom:1px solid var(--line);
+  position:relative;
+  z-index:1;
+}
+.topbar .brand{
+  font-family:var(--mono);
+  letter-spacing:0.22em;
+  font-size:13px;
+  color:var(--cyan);
+}
+.topbar .clock{
+  font-family:var(--mono);
+  font-size:12px;
+  color:var(--muted);
+}
+main{
+  flex:1;
+  padding:16px 16px 90px;
+  position:relative;
+  z-index:1;
+}
+.view{display:none;}
+.view.active{display:block; animation:reveal .25s ease-out;}
+@keyframes reveal{
+  from{opacity:0; clip-path:inset(0 0 100% 0);}
+  to{opacity:1; clip-path:inset(0 0 0% 0);}
+}
+@media (prefers-reduced-motion: reduce){
+  .view.active{animation:none;}
+}
+
+.hud-panel{
+  position:relative;
+  background:linear-gradient(180deg, var(--panel), var(--panel-2));
+  border:1px solid var(--line);
+  padding:16px;
+  margin-bottom:14px;
+}
+.hud-panel::before,.hud-panel::after{
+  content:"";
+  position:absolute;
+  width:14px;height:14px;
+  border:2px solid var(--cyan);
+}
+.hud-panel::before{top:-1px;left:-1px;border-right:none;border-bottom:none;}
+.hud-panel::after{bottom:-1px;right:-1px;border-left:none;border-top:none;}
+
+.eyebrow{
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:0.18em;
+  color:var(--cyan-dim);
+  margin:0 0 8px;
+}
+.level-row{display:flex; align-items:flex-end; gap:12px; margin-bottom:6px;}
+.level-num{font-family:var(--mono); font-size:44px; color:var(--cyan); line-height:1; text-shadow:0 0 18px rgba(76,224,255,0.45);}
+.level-title{font-size:14px; color:var(--text); padding-bottom:6px;}
+.exp-bar-track{
+  height:10px; background:rgba(76,224,255,0.08); border:1px solid var(--line);
+  position:relative; overflow:hidden; margin-top:10px;
+}
+.exp-bar-fill{
+  height:100%; background:linear-gradient(90deg, var(--cyan-dim), var(--cyan));
+  transition:width .4s ease;
+}
+.exp-label{font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:6px; text-align:right;}
+
+.stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px;}
+.stat-cell{
+  background:rgba(76,224,255,0.04); border:1px solid var(--line); padding:10px 12px;
+}
+.stat-cell .label{font-family:var(--mono); font-size:10px; color:var(--muted); letter-spacing:0.1em;}
+.stat-cell .value{font-family:var(--mono); font-size:20px; color:var(--text); margin-top:4px;}
+
+.section-head{
+  display:flex; align-items:center; justify-content:space-between; margin:22px 0 10px;
+}
+.section-head h2{font-size:13px; font-family:var(--mono); letter-spacing:0.14em; color:var(--muted); margin:0; font-weight:500;}
+
+.quest-card{
+  position:relative; background:var(--panel); border:1px solid var(--line);
+  padding:14px; margin-bottom:10px;
+}
+.quest-card.done{opacity:0.5;}
+.quest-card .row1{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
+.quest-card .title{font-size:14.5px; color:var(--text); line-height:1.4;}
+.quest-tag{
+  font-family:var(--mono); font-size:10px; color:var(--cyan-dim); border:1px solid var(--line);
+  padding:2px 6px; white-space:nowrap;
+}
+.quest-meta{display:flex; gap:14px; margin-top:10px; font-family:var(--mono); font-size:11px; color:var(--muted);}
+.quest-meta .countdown.warn{color:var(--danger);}
+.quest-actions{display:flex; gap:8px; margin-top:12px;}
+.btn{
+  font-family:var(--sans); font-size:13px; padding:9px 14px; border:1px solid var(--line);
+  background:transparent; color:var(--text); cursor:pointer;
+}
+.btn:active{transform:translateY(1px);}
+.btn.primary{background:rgba(76,224,255,0.12); border-color:var(--cyan); color:var(--cyan);}
+.btn.danger{border-color:rgba(255,76,109,0.4); color:var(--danger);}
+.btn.full{width:100%;}
+.btn.ghost{border-color:transparent; color:var(--muted);}
+.btn:disabled{opacity:0.35; cursor:default;}
+
+.empty-state{
+  text-align:center; padding:36px 12px; color:var(--muted); font-size:13px; line-height:1.7;
+}
+
+.log-item{
+  display:flex; gap:10px; padding:10px 0; border-bottom:1px solid rgba(76,224,255,0.1);
+  font-size:13px;
+}
+.log-item .icon{font-family:var(--mono); width:20px; text-align:center;}
+.log-item .body{flex:1;}
+.log-item .date{font-family:var(--mono); font-size:10px; color:var(--muted);}
+.log-item.complete .icon{color:var(--good);}
+.log-item.penalty .icon{color:var(--danger);}
+.log-item.levelup .icon{color:var(--gold);}
+
+.field{margin-bottom:14px;}
+.field label{display:block; font-family:var(--mono); font-size:11px; color:var(--muted); margin-bottom:6px; letter-spacing:0.05em;}
+.field input[type=text], .field input[type=number], .field input[type=time], .field input[type=date], .field select{
+  width:100%; background:rgba(255,255,255,0.03); border:1px solid var(--line); color:var(--text);
+  padding:10px; font-size:14px; font-family:var(--sans);
+}
+.field-row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+.radio-group{display:flex; gap:8px;}
+.radio-group label{
+  flex:1; text-align:center; border:1px solid var(--line); padding:8px; font-size:12.5px;
+  color:var(--muted); cursor:pointer;
+}
+.radio-group input{display:none;}
+.radio-group input:checked + span{color:var(--cyan);}
+.radio-group label:has(input:checked){border-color:var(--cyan); background:rgba(76,224,255,0.08);}
+
+.tabbar{
+  position:fixed; bottom:0; left:0; right:0; z-index:5;
+  max-width:480px; margin:0 auto;
+  display:grid; grid-template-columns:repeat(4,1fr);
+  background:rgba(9,13,22,0.92); backdrop-filter:blur(6px);
+  border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.tabbar button{
+  background:none; border:none; color:var(--muted); font-family:var(--sans);
+  font-size:11px; padding:12px 4px 10px; display:flex; flex-direction:column; align-items:center; gap:4px;
+}
+.tabbar button .dot{width:5px; height:5px; border-radius:50%; background:transparent;}
+.tabbar button.active{color:var(--cyan);}
+.tabbar button.active .dot{background:var(--cyan); box-shadow:0 0 6px var(--cyan);}
+
+.modal-backdrop{
+  position:fixed; inset:0; background:rgba(4,6,11,0.75); z-index:20;
+  display:flex; align-items:flex-end; justify-content:center;
+}
+.modal-sheet{
+  width:100%; max-width:480px; background:var(--panel); border-top:1px solid var(--cyan);
+  padding:20px 18px calc(20px + env(safe-area-inset-bottom));
+  max-height:88vh; overflow-y:auto;
+  animation:sheetUp .22s ease-out;
+}
+@keyframes sheetUp{from{transform:translateY(16px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+.modal-title{font-family:var(--mono); font-size:13px; letter-spacing:0.1em; color:var(--cyan); margin:0 0 16px;}
+
+.toast-stack{
+  position:fixed; top:14px; left:0; right:0; z-index:30; display:flex; flex-direction:column; align-items:center; gap:8px;
+  pointer-events:none;
+}
+.toast{
+  font-family:var(--mono); font-size:12.5px; color:var(--text);
+  background:rgba(13,20,32,0.95); border:1px solid var(--cyan); padding:10px 16px;
+  box-shadow:0 0 20px rgba(76,224,255,0.15);
+  animation:toastIn .25s ease-out;
+}
+.toast.penalty{border-color:var(--danger); color:var(--danger);}
+.toast.levelup{border-color:var(--gold); color:var(--gold);}
+@keyframes toastIn{from{opacity:0; transform:translateY(-6px);} to{opacity:1; transform:translateY(0);}}
+
+.levelup-overlay{
+  position:fixed; inset:0; z-index:40; background:rgba(4,6,11,0.9);
+  display:flex; align-items:center; justify-content:center; flex-direction:column;
+}
+.levelup-overlay .big{font-family:var(--mono); font-size:56px; color:var(--gold); text-shadow:0 0 30px rgba(255,215,108,0.5);}
+.levelup-overlay .sub{font-family:var(--mono); font-size:13px; color:var(--text); letter-spacing:0.2em; margin-top:8px;}
+
+.switch{position:relative; width:42px; height:24px; background:rgba(255,255,255,0.08); border:1px solid var(--line); cursor:pointer;}
+.switch .knob{position:absolute; top:1px; left:1px; width:18px; height:18px; background:var(--muted); transition:.2s;}
+.switch.on{border-color:var(--cyan);}
+.switch.on .knob{left:21px; background:var(--cyan);}
+.setting-row{display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid rgba(76,224,255,0.08);}
+.setting-row .label{font-size:13.5px;}
+.setting-row .desc{font-size:11.5px; color:var(--muted); margin-top:2px;}
+.small-note{font-size:11.5px; color:var(--muted); line-height:1.7; margin-top:10px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <span class="brand">SYSTEM</span>
+    <span class="clock" id="clock">--:--:--</span>
+  </div>
+
+  <main>
+    <section class="view" id="view-status">
+      <div class="hud-panel">
+        <p class="eyebrow">STATUS WINDOW</p>
+        <div class="level-row">
+          <span class="level-num" id="st-level">1</span>
+          <span class="level-title" id="st-title">見習い</span>
+        </div>
+        <div class="exp-bar-track"><div class="exp-bar-fill" id="st-expfill" style="width:0%"></div></div>
+        <div class="exp-label" id="st-explabel">0 / 100 EXP</div>
+        <div class="stat-grid" id="st-statgrid"></div>
+      </div>
+      <div class="hud-panel">
+        <p class="eyebrow">TODAY</p>
+        <div id="st-today"></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-quests">
+      <div class="section-head">
+        <h2>ACTIVE QUESTS</h2>
+        <button class="btn primary" id="btn-add-quest">＋ 追加</button>
+      </div>
+      <div id="quest-list"></div>
+    </section>
+
+    <section class="view" id="view-log">
+      <div class="section-head"><h2>LOG</h2></div>
+      <div id="log-list"></div>
+    </section>
+
+    <section class="view" id="view-settings">
+      <div class="section-head"><h2>NOTIFICATIONS</h2></div>
+      <div class="hud-panel">
+        <div class="setting-row">
+          <div><div class="label">通知を許可</div><div class="desc">期限接近・超過をこの端末に通知します</div></div>
+          <div class="switch" id="sw-notify"><div class="knob"></div></div>
+        </div>
+        <div class="field" style="margin-top:14px;">
+          <label>何時間前に通知するか</label>
+          <select id="in-lead-hours">
+            <option value="1">1時間前</option>
+            <option value="3">3時間前</option>
+            <option value="6">6時間前</option>
+            <option value="12">12時間前</option>
+          </select>
+        </div>
+        <button class="btn full" id="btn-test-notify">通知テストを送信</button>
+        <p class="small-note">
+          ブラウザの制約上、アプリを開いていない状態での通知配信は端末・ブラウザにより保証されません（特にiOSはバックグラウンド定期通知に対応していません）。
+          確実に毎日通知したい場合は、README内の外部リマインダー連携（ntfy.sh等）の案内も参照してください。
+        </p>
+      </div>
+
+      <div class="section-head"><h2>PENALTY SEVERITY</h2></div>
+      <div class="hud-panel">
+        <div class="field">
+          <label>ペナルティ倍率</label>
+          <select id="in-penalty-mult">
+            <option value="0.5">やさしい (0.5倍)</option>
+            <option value="1">標準 (1倍)</option>
+            <option value="1.5">厳しい (1.5倍)</option>
+            <option value="2">鬼 (2倍)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-head"><h2>STAT LABELS</h2></div>
+      <div class="hud-panel" id="stat-label-editor"></div>
+
+      <div class="section-head"><h2>DATA</h2></div>
+      <div class="hud-panel">
+        <button class="btn full" id="btn-export" style="margin-bottom:10px;">JSONをエクスポート</button>
+        <button class="btn full" id="btn-import" style="margin-bottom:10px;">JSONをインポート</button>
+        <input type="file" id="file-import" accept="application/json" style="display:none;">
+        <button class="btn full danger" id="btn-reset">全データをリセット</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button data-tab="status" class="active"><span class="dot"></span>ステータス</button>
+    <button data-tab="quests"><span class="dot"></span>クエスト</button>
+    <button data-tab="log"><span class="dot"></span>ログ</button>
+    <button data-tab="settings"><span class="dot"></span>設定</button>
+  </nav>
+</div>
+
+<div class="toast-stack" id="toast-stack"></div>
+<div id="modal-root"></div>
+
+<script src="db.js"></script>
+<script>
+/* ---------- constants ---------- */
+const TITLE_TIERS = [[1,"見習い"],[5,"駆け出し"],[10,"熟練者"],[20,"達人"],[30,"覚醒者"],[50,"英雄"]];
+const STAT_KEYS = ["STR","VIT","INT","FOC","PER"];
+
+function todayStr(d=new Date()){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function addDays(dateStr, n){
+  const [y,m,d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m-1, d+n);
+  return todayStr(dt);
+}
+function expNeeded(level){ return 100 + (level-1)*50; }
+function titleForLevel(level){
+  let t = TITLE_TIERS[0][1];
+  for(const [lv,name] of TITLE_TIERS){ if(level>=lv) t=name; }
+  return t;
+}
+function uid(){ return Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
+
+function defaultState(){
+  const today = todayStr();
+  return {
+    version:1,
+    profile:{ lastOpenedDate: today },
+    level:1, exp:0,
+    stats:{STR:10,VIT:10,INT:10,FOC:10,PER:10},
+    statLabels:{STR:"筋力",VIT:"体力",INT:"知力",FOC:"集中力",PER:"精神力"},
+    settings:{ notificationsEnabled:false, reminderLeadHours:3, penaltyMultiplier:1 },
+    quests:[
+      quest("筋トレ 20分","daily","STR",{deadlineTime:"23:00", rewardExp:15, rewardStat:1, penaltyExp:-20, penaltyStat:-1}, today),
+      quest("読書 15ページ","daily","INT",{deadlineTime:"23:00", rewardExp:12, rewardStat:1, penaltyExp:-15, penaltyStat:-1}, today),
+      quest("23時までに就寝準備","daily","VIT",{deadlineTime:"23:00", rewardExp:10, rewardStat:1, penaltyExp:-15, penaltyStat:-1}, today),
+    ],
+    log:[]
+  };
+}
+function quest(title, type, statTag, opts, createdDate){
+  return {
+    id:uid(), title, type, statTag: statTag||null,
+    deadlineTime: opts.deadlineTime || "23:59",
+    deadlineDate: opts.deadlineDate || null,
+    rewardExp: opts.rewardExp ?? 10,
+    rewardStat: opts.rewardStat ?? 1,
+    penaltyExp: opts.penaltyExp ?? -15,
+    penaltyStat: opts.penaltyStat ?? -1,
+    status:"active",
+    lastCompletedDate:null,
+    streak:0, failCount:0,
+    createdDate: createdDate || todayStr(),
+  };
+}
+
+/* ---------- state load/save ---------- */
+let STATE = null;
+let swRegistration = null;
+
+async function loadState(){
+  let s = null;
+  try{ s = await systemGetState(); }catch(e){ console.warn(e); }
+  if(!s) s = defaultState();
+  STATE = s;
+  rollover(STATE);
+  await saveState();
+}
+async function saveState(){
+  await systemSetState(STATE);
+}
+
+function rollover(state){
+  const today = todayStr();
+  let last = state.profile.lastOpenedDate || today;
+  if(last === today) return;
+  let cursor = addDays(last,1);
+  let guard = 0;
+  while(cursor <= today && guard < 14){
+    state.quests.forEach(q=>{
+      if(q.type==="daily" && q.status==="active" && q.createdDate<=cursor){
+        if(q.lastCompletedDate !== cursor){
+          applyPenalty(state,q,cursor,false);
+        }
+      }
+    });
+    cursor = addDays(cursor,1);
+    guard++;
+  }
+  state.profile.lastOpenedDate = today;
+}
+
+function applyPenalty(state, q, dateStr, live){
+  const mult = state.settings.penaltyMultiplier || 1;
+  const expDelta = Math.round(q.penaltyExp * mult);
+  state.exp = Math.max(0, state.exp + expDelta);
+  if(q.statTag){
+    state.stats[q.statTag] = Math.max(1, state.stats[q.statTag] + Math.round(q.penaltyStat*mult));
+  }
+  q.failCount++;
+  q.streak = 0;
+  state.log.unshift({type:"penalty", date:dateStr, title:q.title, detail:`${expDelta} EXP${q.statTag?` / ${state.statLabels[q.statTag]} ${Math.round(q.penaltyStat*mult)}`:""}`, ts:Date.now()});
+  if(live) toast(`ペナルティ発生：${q.title}`, "penalty");
+}
+
+function completeQuest(id){
+  const q = STATE.quests.find(x=>x.id===id);
+  if(!q) return;
+  const today = todayStr();
+  if(q.type==="daily" && q.lastCompletedDate===today) return;
+  if(q.type==="once" && q.status!=="active") return;
+
+  STATE.exp += q.rewardExp;
+  if(q.statTag) STATE.stats[q.statTag] += q.rewardStat;
+  q.lastCompletedDate = today;
+  q.streak++;
+  if(q.type==="once") q.status = "done";
+
+  STATE.log.unshift({type:"complete", date:today, title:q.title, detail:`+${q.rewardExp} EXP${q.statTag?` / ${state_label(q.statTag)} +${q.rewardStat}`:""}`, ts:Date.now()});
+  toast(`クエスト達成：${q.title}`, "complete");
+
+  checkLevelUp();
+  saveState();
+  renderAll();
+}
+function state_label(k){ return STATE.statLabels[k] || k; }
+
+function checkLevelUp(){
+  let leveled = false;
+  while(STATE.exp >= expNeeded(STATE.level)){
+    STATE.exp -= expNeeded(STATE.level);
+    STATE.level++;
+    leveled = true;
+    STATE.log.unshift({type:"levelup", date:todayStr(), title:`LEVEL ${STATE.level}`, detail:titleForLevel(STATE.level), ts:Date.now()});
+  }
+  if(leveled) showLevelUp(STATE.level);
+}
+
+/* ---------- rendering ---------- */
+function renderAll(){
+  renderStatus();
+  renderQuests();
+  renderLog();
+  renderSettings();
+}
+
+function renderStatus(){
+  document.getElementById("st-level").textContent = STATE.level;
+  document.getElementById("st-title").textContent = titleForLevel(STATE.level);
+  const need = expNeeded(STATE.level);
+  document.getElementById("st-expfill").style.width = Math.min(100, (STATE.exp/need)*100)+"%";
+  document.getElementById("st-explabel").textContent = `${STATE.exp} / ${need} EXP`;
+
+  const grid = document.getElementById("st-statgrid");
+  grid.innerHTML = STAT_KEYS.map(k=>`
+    <div class="stat-cell">
+      <div class="label">${STATE.statLabels[k]}</div>
+      <div class="value">${STATE.stats[k]}</div>
+    </div>`).join("");
+
+  const today = todayStr();
+  const dailies = STATE.quests.filter(q=>q.type==="daily" && q.status==="active");
+  const doneToday = dailies.filter(q=>q.lastCompletedDate===today).length;
+  const todayBox = document.getElementById("st-today");
+  if(dailies.length===0){
+    todayBox.innerHTML = `<div class="empty-state">クエストがありません。「クエスト」タブから追加してください。</div>`;
+  }else{
+    todayBox.innerHTML = `<div style="font-family:var(--mono); font-size:13px;">本日のデイリー：${doneToday} / ${dailies.length} 完了</div>`;
+  }
+}
+
+function fmtCountdown(ms){
+  if(ms<=0) return "期限超過";
+  const s = Math.floor(ms/1000);
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  return `残り ${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+}
+function questDeadlineDate(q, now=new Date()){
+  if(q.type==="daily"){
+    const [h,m] = (q.deadlineTime||"23:59").split(":").map(Number);
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
+  }
+  if(q.type==="once" && q.deadlineDate){
+    const [h,m] = (q.deadlineTime||"23:59").split(":").map(Number);
+    const [y,mo,da] = q.deadlineDate.split("-").map(Number);
+    return new Date(y, mo-1, da, h, m, 0);
+  }
+  return null;
+}
+
+function renderQuests(){
+  const list = document.getElementById("quest-list");
+  const active = STATE.quests.filter(q=>q.status==="active" || (q.type==="once" && q.status==="done"));
+  if(active.length===0){
+    list.innerHTML = `<div class="empty-state">まだクエストがありません。<br>「＋ 追加」から最初のクエストを設定しましょう。</div>`;
+    return;
+  }
+  const today = todayStr();
+  list.innerHTML = active.map(q=>{
+    const done = (q.type==="daily" && q.lastCompletedDate===today) || (q.type==="once" && q.status==="done");
+    const deadline = questDeadlineDate(q);
+    const ms = deadline ? deadline.getTime()-Date.now() : null;
+    return `
+    <div class="quest-card ${done?"done":""}" data-id="${q.id}">
+      <div class="row1">
+        <div class="title">${escapeHtml(q.title)}</div>
+        ${q.statTag?`<span class="quest-tag">${STATE.statLabels[q.statTag]}</span>`:""}
+      </div>
+      <div class="quest-meta">
+        <span>${q.type==="daily"?"デイリー":"単発"}</span>
+        ${ms!==null?`<span class="countdown ${ms<3*3600*1000?"warn":""}" data-deadline="${deadline.getTime()}">${done?"完了済み":fmtCountdown(ms)}</span>`:""}
+        ${q.streak>0?`<span>連続 ${q.streak}</span>`:""}
+      </div>
+      <div class="quest-actions">
+        <button class="btn primary complete-btn" data-id="${q.id}" ${done?"disabled":""}>${done?"達成済み":"達成する"}</button>
+        <button class="btn ghost edit-btn" data-id="${q.id}">編集</button>
+        <button class="btn ghost delete-btn" data-id="${q.id}">削除</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  list.querySelectorAll(".complete-btn").forEach(b=>b.addEventListener("click",()=>completeQuest(b.dataset.id)));
+  list.querySelectorAll(".delete-btn").forEach(b=>b.addEventListener("click",()=>deleteQuest(b.dataset.id)));
+  list.querySelectorAll(".edit-btn").forEach(b=>b.addEventListener("click",()=>openQuestModal(b.dataset.id)));
+}
+
+function updateCountdownsOnly(){
+  document.querySelectorAll(".countdown[data-deadline]").forEach(el=>{
+    const dl = Number(el.dataset.deadline);
+    const ms = dl - Date.now();
+    el.textContent = fmtCountdown(ms);
+    el.classList.toggle("warn", ms>0 && ms<3*3600*1000);
+  });
+}
+
+function deleteQuest(id){
+  if(!confirm("このクエストを削除しますか？")) return;
+  STATE.quests = STATE.quests.filter(q=>q.id!==id);
+  saveState(); renderAll();
+}
+
+function renderLog(){
+  const box = document.getElementById("log-list");
+  if(STATE.log.length===0){
+    box.innerHTML = `<div class="empty-state">まだ記録がありません。</div>`;
+    return;
+  }
+  const icon = {complete:"✓", penalty:"!", levelup:"★"};
+  box.innerHTML = STATE.log.slice(0,150).map(l=>`
+    <div class="log-item ${l.type}">
+      <div class="icon">${icon[l.type]||"-"}</div>
+      <div class="body">
+        <div>${escapeHtml(l.title)}</div>
+        <div class="date">${l.date} ・ ${escapeHtml(l.detail||"")}</div>
+      </div>
+    </div>`).join("");
+}
+
+function renderSettings(){
+  document.getElementById("sw-notify").classList.toggle("on", !!STATE.settings.notificationsEnabled);
+  document.getElementById("in-lead-hours").value = String(STATE.settings.reminderLeadHours||3);
+  document.getElementById("in-penalty-mult").value = String(STATE.settings.penaltyMultiplier||1);
+
+  const editor = document.getElementById("stat-label-editor");
+  editor.innerHTML = STAT_KEYS.map(k=>`
+    <div class="field">
+      <label>${k}</label>
+      <input type="text" data-stat="${k}" value="${escapeHtml(STATE.statLabels[k])}">
+    </div>`).join("");
+  editor.querySelectorAll("input").forEach(inp=>{
+    inp.addEventListener("change", ()=>{
+      STATE.statLabels[inp.dataset.stat] = inp.value.trim() || inp.dataset.stat;
+      saveState(); renderStatus(); renderQuests();
+    });
+  });
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+/* ---------- toasts & level up overlay ---------- */
+function toast(msg, type=""){
+  const stack = document.getElementById("toast-stack");
+  const el = document.createElement("div");
+  el.className = "toast " + type;
+  el.textContent = msg;
+  stack.appendChild(el);
+  setTimeout(()=>el.remove(), 2600);
+}
+function showLevelUp(level){
+  const overlay = document.createElement("div");
+  overlay.className = "levelup-overlay";
+  overlay.innerHTML = `<div class="big">LEVEL ${level}</div><div class="sub">${titleForLevel(level)}</div>`;
+  overlay.addEventListener("click", ()=>overlay.remove());
+  document.body.appendChild(overlay);
+  setTimeout(()=>overlay.remove(), 2200);
+  if(STATE.settings.notificationsEnabled && swRegistration){
+    swRegistration.showNotification("レベルアップ！", {
+      body:`LEVEL ${level} — ${titleForLevel(level)}`,
+      icon:"icons/icon-192.png", badge:"icons/icon-192.png", tag:"system-levelup"
+    }).catch(()=>{});
+  }
+}
+
+/* ---------- quest modal ---------- */
+function openQuestModal(editId){
+  const editing = editId ? STATE.quests.find(q=>q.id===editId) : null;
+  const root = document.getElementById("modal-root");
+  const wrap = document.createElement("div");
+  wrap.className = "modal-backdrop";
+  wrap.innerHTML = `
+    <div class="modal-sheet">
+      <p class="modal-title">${editing?"クエストを編集":"新しいクエスト"}</p>
+      <div class="field">
+        <label>クエスト名</label>
+        <input type="text" id="qm-title" value="${editing?escapeHtml(editing.title):""}" placeholder="例：筋トレ 20分">
+      </div>
+      <div class="field">
+        <label>タイプ</label>
+        <div class="radio-group">
+          <label><input type="radio" name="qm-type" value="daily" ${!editing||editing.type==="daily"?"checked":""}><span>デイリー</span></label>
+          <label><input type="radio" name="qm-type" value="once" ${editing&&editing.type==="once"?"checked":""}><span>単発</span></label>
+        </div>
+      </div>
+      <div class="field" id="qm-once-date-wrap" style="display:${editing&&editing.type==="once"?"block":"none"}">
+        <label>期限日</label>
+        <input type="date" id="qm-date" value="${editing&&editing.deadlineDate?editing.deadlineDate:todayStr()}">
+      </div>
+      <div class="field">
+        <label>期限時刻</label>
+        <input type="time" id="qm-time" value="${editing?editing.deadlineTime:"23:00"}">
+      </div>
+      <div class="field">
+        <label>関連ステータス（任意）</label>
+        <select id="qm-stat">
+          <option value="">なし</option>
+          ${STAT_KEYS.map(k=>`<option value="${k}" ${editing&&editing.statTag===k?"selected":""}>${STATE.statLabels[k]}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>報酬 EXP</label><input type="number" id="qm-rexp" value="${editing?editing.rewardExp:10}"></div>
+        <div class="field"><label>報酬 ステータス</label><input type="number" id="qm-rstat" value="${editing?editing.rewardStat:1}"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>ペナルティ EXP</label><input type="number" id="qm-pexp" value="${editing?editing.penaltyExp:-15}"></div>
+        <div class="field"><label>ペナルティ ステータス</label><input type="number" id="qm-pstat" value="${editing?editing.penaltyStat:-1}"></div>
+      </div>
+      <button class="btn primary full" id="qm-save" style="margin-top:6px;">保存</button>
+      <button class="btn full" id="qm-cancel" style="margin-top:8px;">キャンセル</button>
+    </div>`;
+  root.appendChild(wrap);
+
+  wrap.querySelectorAll('input[name="qm-type"]').forEach(r=>{
+    r.addEventListener("change", ()=>{
+      document.getElementById("qm-once-date-wrap").style.display = r.value==="once" && r.checked ? "block":"none";
+    });
+  });
+  wrap.querySelector("#qm-cancel").addEventListener("click", ()=>wrap.remove());
+  wrap.addEventListener("click", (e)=>{ if(e.target===wrap) wrap.remove(); });
+
+  wrap.querySelector("#qm-save").addEventListener("click", ()=>{
+    const title = wrap.querySelector("#qm-title").value.trim();
+    if(!title){ alert("クエスト名を入力してください"); return; }
+    const type = wrap.querySelector('input[name="qm-type"]:checked').value;
+    const time = wrap.querySelector("#qm-time").value || "23:59";
+    const date = wrap.querySelector("#qm-date").value;
+    const statTag = wrap.querySelector("#qm-stat").value || null;
+    const rexp = Number(wrap.querySelector("#qm-rexp").value)||0;
+    const rstat = Number(wrap.querySelector("#qm-rstat").value)||0;
+    const pexp = Number(wrap.querySelector("#qm-pexp").value)||0;
+    const pstat = Number(wrap.querySelector("#qm-pstat").value)||0;
+
+    if(editing){
+      Object.assign(editing, {title, type, deadlineTime:time, deadlineDate:type==="once"?date:null,
+        statTag, rewardExp:rexp, rewardStat:rstat, penaltyExp:pexp, penaltyStat:pstat});
+    }else{
+      STATE.quests.push(quest(title, type, statTag, {
+        deadlineTime:time, deadlineDate:type==="once"?date:null,
+        rewardExp:rexp, rewardStat:rstat, penaltyExp:pexp, penaltyStat:pstat
+      }, todayStr()));
+    }
+    saveState(); renderAll();
+    wrap.remove();
+  });
+}
+
+/* ---------- tabs ---------- */
+function switchTab(name){
+  document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active", v.id==="view-"+name));
+  document.querySelectorAll(".tabbar button").forEach(b=>b.classList.toggle("active", b.dataset.tab===name));
+}
+document.querySelectorAll(".tabbar button").forEach(b=>{
+  b.addEventListener("click", ()=>switchTab(b.dataset.tab));
+});
+
+/* ---------- settings interactions ---------- */
+document.getElementById("sw-notify").addEventListener("click", async ()=>{
+  if(!STATE.settings.notificationsEnabled){
+    if(!("Notification" in window)){ alert("このブラウザは通知に対応していません"); return; }
+    const perm = await Notification.requestPermission();
+    if(perm !== "granted"){ toast("通知が許可されませんでした"); return; }
+    STATE.settings.notificationsEnabled = true;
+    if(swRegistration && "periodicSync" in swRegistration){
+      try{ await swRegistration.periodicSync.register("system-daily-check", {minInterval:12*60*60*1000}); }catch(e){}
+    }
+  }else{
+    STATE.settings.notificationsEnabled = false;
+  }
+  saveState(); renderSettings();
+});
+document.getElementById("in-lead-hours").addEventListener("change", (e)=>{
+  STATE.settings.reminderLeadHours = Number(e.target.value);
+  saveState();
+});
+document.getElementById("in-penalty-mult").addEventListener("change", (e)=>{
+  STATE.settings.penaltyMultiplier = Number(e.target.value);
+  saveState();
+});
+document.getElementById("btn-test-notify").addEventListener("click", async ()=>{
+  if(Notification.permission !== "granted"){ toast("先に通知を許可してください"); return; }
+  if(swRegistration){
+    swRegistration.showNotification("SYSTEM", {body:"通知は正常に届いています。", icon:"icons/icon-192.png", tag:"system-test"});
+  }
+});
+document.getElementById("btn-add-quest").addEventListener("click", ()=>openQuestModal(null));
+
+document.getElementById("btn-export").addEventListener("click", ()=>{
+  const blob = new Blob([JSON.stringify(STATE,null,2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `system_backup_${todayStr()}.json`;
+  a.click();
+});
+document.getElementById("btn-import").addEventListener("click", ()=>document.getElementById("file-import").click());
+document.getElementById("file-import").addEventListener("change", (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const parsed = JSON.parse(reader.result);
+      if(!parsed || !Array.isArray(parsed.quests)) throw new Error("invalid");
+      STATE = parsed;
+      rollover(STATE);
+      saveState(); renderAll();
+      toast("インポートしました");
+    }catch(err){ alert("読み込みに失敗しました。ファイル形式を確認してください。"); }
+  };
+  reader.readAsText(file);
+});
+document.getElementById("btn-reset").addEventListener("click", ()=>{
+  if(!confirm("全データを削除して初期状態に戻します。よろしいですか？")) return;
+  STATE = defaultState();
+  saveState(); renderAll();
+});
+
+/* ---------- clock ---------- */
+function tickClock(){
+  const n = new Date();
+  document.getElementById("clock").textContent =
+    `${String(n.getHours()).padStart(2,"0")}:${String(n.getMinutes()).padStart(2,"0")}:${String(n.getSeconds()).padStart(2,"0")}`;
+}
+setInterval(tickClock, 1000);
+tickClock();
+
+/* ---------- foreground due/overdue watcher ---------- */
+const notifiedToday = new Set();
+function foregroundCheck(){
+  if(!STATE.settings.notificationsEnabled || !swRegistration) return;
+  const today = todayStr();
+  const leadMs = (STATE.settings.reminderLeadHours||3)*3600*1000;
+  STATE.quests.forEach(q=>{
+    if(q.status!=="active") return;
+    if(q.type==="daily" && q.lastCompletedDate===today) return;
+    const dl = questDeadlineDate(q);
+    if(!dl) return;
+    const ms = dl.getTime()-Date.now();
+    const key = q.id+today;
+    if(ms>0 && ms<=leadMs && !notifiedToday.has(key)){
+      notifiedToday.add(key);
+      swRegistration.showNotification("クエスト期限が近づいています", {body:q.title, icon:"icons/icon-192.png", tag:"system-duesoon-"+q.id});
+    }
+  });
+}
+setInterval(()=>{ updateCountdownsOnly(); foregroundCheck(); }, 30000);
+
+/* ---------- boot ---------- */
+async function boot(){
+  await loadState();
+  renderAll();
+  switchTab("status");
+
+  if("serviceWorker" in navigator){
+    try{
+      const reg = await navigator.serviceWorker.register("sw.js");
+      swRegistration = await navigator.serviceWorker.ready;
+    }catch(e){ console.warn("SW registration failed", e); }
+  }
+}
+boot();
+</script>
+</body>
+</html>
