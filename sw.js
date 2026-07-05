@@ -179,4 +179,4 @@ function questDeadline(quest, now) {
     return new Date(y, mo - 1, da, h, m, 0);
   }
   return null;
-}
+} 
