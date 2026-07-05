@@ -120,6 +120,51 @@ async function checkQuestsAndNotify(forceTest = false) {
       tag: "system-duesoon",
     });
   }
+
+  // Best-effort surprise quest issuance. periodicsync wake-ups are already at
+  // browser-determined, unpredictable times (Chrome/Android only) — adding a
+  // chance-based skip on top means not every wake produces a quest, so when
+  // one does land it's genuinely "did not know it was coming."
+  if (Math.random() < 0.35) {
+    await issueSurpriseQuest(state);
+  }
+}
+
+const SW_FALLBACK_POOL = [
+  { title: "緊急：10分間の運動", statTag: "STR", rewardExp: 15, rewardStat: 1, penaltyExp: -20, penaltyStat: -1 },
+  { title: "緊急：5分間の姿勢リセットと深呼吸", statTag: "FOC", rewardExp: 10, rewardStat: 1, penaltyExp: -15, penaltyStat: -1 },
+  { title: "緊急：水を一杯飲む", statTag: "VIT", rewardExp: 8, rewardStat: 1, penaltyExp: -10, penaltyStat: -1 },
+  { title: "緊急：15分間の学習", statTag: "INT", rewardExp: 12, rewardStat: 1, penaltyExp: -15, penaltyStat: -1 },
+];
+
+function swUid() {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+async function issueSurpriseQuest(state) {
+  const picked = SW_FALLBACK_POOL[Math.floor(Math.random() * SW_FALLBACK_POOL.length)];
+  const now = new Date();
+  const deadline = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+  const newQuest = {
+    id: swUid(), title: picked.title, type: "once", statTag: picked.statTag,
+    deadlineTime: `${String(deadline.getHours()).padStart(2, "0")}:${String(deadline.getMinutes()).padStart(2, "0")}`,
+    deadlineDate: todayStr(deadline),
+    rewardExp: picked.rewardExp, rewardStat: picked.rewardStat,
+    penaltyExp: picked.penaltyExp, penaltyStat: picked.penaltyStat,
+    rewardItem: null, status: "active", lastCompletedDate: null,
+    streak: 0, failCount: 0, createdDate: todayStr(now),
+    scalingEnabled: false, origin: "system", isPenaltyQuest: false,
+    chainLevel: 0, parentQuestId: null,
+  };
+  state.quests = state.quests || [];
+  state.quests.push(newQuest);
+  await systemSetState(state);
+  await self.registration.showNotification("SYSTEM: 新規クエスト発行", {
+    body: newQuest.title,
+    icon: "icons/icon-192.png",
+    badge: "icons/icon-192.png",
+    tag: "system-new-quest-" + newQuest.id,
+  });
 }
 
 function todayStr(d) {

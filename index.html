@@ -160,6 +160,8 @@ main{
   padding:2px 6px; white-space:nowrap;
 }
 .quest-tag.item-tag{color:var(--gold); border-color:rgba(255,215,108,0.4);}
+.quest-tag.system-tag{color:var(--danger); border-color:rgba(255,76,109,0.4);}
+.quest-card.penalty-quest{border-color:var(--danger); background:linear-gradient(180deg, rgba(255,76,109,0.06), var(--panel));}
 .quest-meta{display:flex; gap:14px; margin-top:10px; font-family:var(--mono); font-size:11px; color:var(--muted); flex-wrap:wrap;}
 .quest-meta .countdown.warn{color:var(--danger);}
 .quest-actions{display:flex; gap:8px; margin-top:12px;}
@@ -189,6 +191,7 @@ main{
 .log-item.penalty .icon{color:var(--danger);}
 .log-item.levelup .icon{color:var(--gold);}
 .log-item.item .icon{color:var(--epic);}
+.log-item.scaleup .icon{color:var(--gold);}
 
 .field{margin-bottom:14px;}
 .field label{display:block; font-family:var(--mono); font-size:11px; color:var(--muted); margin-bottom:6px; letter-spacing:0.05em;}
@@ -333,7 +336,7 @@ main{
       <div class="section-head">
         <h2>ACTIVE QUESTS</h2>
         <div style="display:flex; gap:8px;">
-          <button class="btn" id="btn-ai-quest">🤖 AI発行</button>
+          <button class="btn" id="btn-ai-quest">🤖 発行を要求</button>
           <button class="btn primary" id="btn-add-quest">＋ 追加</button>
         </div>
       </div>
@@ -372,7 +375,7 @@ main{
         </p>
       </div>
 
-      <div class="section-head"><h2>AI QUEST GENERATION</h2></div>
+      <div class="section-head"><h2>AI QUEST ISSUANCE</h2></div>
       <div class="hud-panel">
         <div class="field">
           <label>プロバイダ</label>
@@ -387,13 +390,13 @@ main{
           <label>APIキー</label>
           <input type="password" id="in-ai-key" placeholder="sk-...">
         </div>
-        <div class="field">
-          <label>エンドポイントURL（OpenAI互換・Gemini・Ollamaの場合に指定/上書き）</label>
-          <input type="text" id="in-ai-endpoint" placeholder="例：https://your-chatai.example.com/v1/chat/completions">
+        <div class="field" id="ai-endpoint-row">
+          <label id="ai-endpoint-label">エンドポイントURL</label>
+          <input type="text" id="in-ai-endpoint" placeholder="">
         </div>
         <div class="field">
           <label>モデル名</label>
-          <input type="text" id="in-ai-model" placeholder="例：claude-sonnet-4-6 / gpt-4.1-mini / gemini-2.5-flash">
+          <input type="text" id="in-ai-model" placeholder="例：claude-sonnet-4-6 / gpt-4.1-mini / gemini-3.5-flash">
         </div>
         <div class="field" id="ai-maxtokens-row" style="display:none;">
           <label>トークン数パラメータ名</label>
@@ -403,13 +406,16 @@ main{
           </select>
         </div>
         <div class="field">
-          <label>一度に提案するクエスト数</label>
+          <label>一度に発行するクエスト数</label>
           <input type="number" id="in-ai-count" min="1" max="5" value="2">
         </div>
         <p class="small-note">
+          発行されたクエストは承認プロセスなしでそのままアクティブになります（拒否はできません。削除は可能です）。
+          「発行を要求」ボタンでいつでも即時発行できるほか、1日に1〜2回、ランダムな時刻に自動で発行されます（アプリを開いている間、またはOS側の制約により機会が失われる場合があります）。
           APIキーはこの端末のIndexedDBにのみ保存され、リクエストはこのブラウザから各プロバイダへ直接送信されます（サーバー経由ではありません）。
           Anthropicへの直接呼び出しはブラウザCORS用の専用ヘッダーを自動付与して送信します。
           Ollamaを選ぶ場合、スマホからOllamaサーバーに到達できるネットワーク構成（同一Wi-Fi等）が必要です。
+          AIが設定されていない、または呼び出しに失敗した場合は、内蔵の緊急クエスト群から自動で選ばれます。
         </p>
       </div>
 
@@ -460,7 +466,7 @@ const RARITY_LABEL = {common:"コモン", rare:"レア", epic:"エピック", le
 const RARITY_TONE = {common:"cyan", rare:"cyan", epic:"epic", legendary:"gold"};
 const AI_SYSTEM_PROMPT = `あなたは、ユーザーの成長を管理するゲーム風システム「SYSTEM」です。
 渡されるユーザーの現在のレベル・ステータス・直近の行動ログ・クエスト達成/失敗傾向をもとに、
-そのユーザーに合った新しいクエストを提案してください。
+そのユーザーに課す新しいクエストを生成してください。これは提案ではなく、そのまま課される命令です。
 
 出力は必ず次の形式のJSON配列のみを返してください。前置きや説明文、コードブロックのバッククォートは一切含めないでください。
 
@@ -535,6 +541,11 @@ function quest(title, type, statTag, opts, createdDate){
     lastCompletedDate:null,
     streak:0, failCount:0,
     createdDate: createdDate || todayStr(),
+    scalingEnabled: opts.scalingEnabled !== undefined ? opts.scalingEnabled : true,
+    origin: opts.origin || "user",
+    isPenaltyQuest: opts.isPenaltyQuest || false,
+    chainLevel: opts.chainLevel || 0,
+    parentQuestId: opts.parentQuestId || null,
   };
 }
 function normalizeState(state){
@@ -583,6 +594,9 @@ function rollover(state, collector){
         if(q.lastCompletedDate !== cursor){
           applyPenalty(state,q,cursor,false);
           if(collector) collector.push({title:q.title, dateStr:cursor});
+          if(q.scalingEnabled){
+            spawnPenaltyQuest(state, q, 1, cursor);
+          }
         }
       }
     });
@@ -605,6 +619,94 @@ function applyPenalty(state, q, dateStr, live){
   if(live) toast(`ペナルティ発生：${q.title}`, "penalty");
 }
 
+const CHAIN_CAP = 3;
+function baseTitle(title){ return title.replace(/^【ペナルティ Lv\.\d+】/, "").trim(); }
+
+function spawnPenaltyQuest(state, sourceQuest, chainLevel, dateStr){
+  const hoursLeft = Math.max(1, 4 - chainLevel);
+  const deadline = new Date(Date.now() + hoursLeft*60*60*1000);
+  const pq = quest(
+    `【ペナルティ Lv.${chainLevel}】${baseTitle(sourceQuest.title)}`,
+    "once", sourceQuest.statTag,
+    {
+      deadlineDate: todayStr(deadline),
+      deadlineTime: `${String(deadline.getHours()).padStart(2,"0")}:${String(deadline.getMinutes()).padStart(2,"0")}`,
+      rewardExp: sourceQuest.rewardExp,
+      rewardStat: sourceQuest.rewardStat,
+      penaltyExp: Math.round(sourceQuest.penaltyExp * (1 + 0.4*chainLevel)),
+      penaltyStat: sourceQuest.penaltyStat,
+      scalingEnabled:false, origin:"system", isPenaltyQuest:true,
+      chainLevel, parentQuestId: sourceQuest.id
+    },
+    dateStr || todayStr()
+  );
+  state.quests.push(pq);
+  enqueueMessage({
+    kind:"notice", tone:"danger", title:`SYSTEM: ペナルティクエスト発行（Lv.${chainLevel}）`,
+    lines:[`「${baseTitle(sourceQuest.title)}」の未達成により、代償クエストが発行された。`,
+           `期限：${hoursLeft}時間以内`, "達成せよ。さもなくば、さらなる代償を払うことになる。"]
+  });
+  if(state.settings.notificationsEnabled && swRegistration){
+    swRegistration.showNotification("ペナルティクエスト発行", {body: pq.title, icon:"icons/icon-192.png", tag:"system-penalty-quest-"+pq.id});
+  }
+  return pq;
+}
+
+function escalateChain(state, q, dateStr){
+  const mult = state.settings.penaltyMultiplier || 1;
+  const expDelta = Math.round(q.penaltyExp * mult);
+  state.exp = Math.max(0, state.exp + expDelta);
+  if(q.statTag){
+    state.stats[q.statTag] = Math.max(1, state.stats[q.statTag] + Math.round(q.penaltyStat*mult));
+  }
+  q.status = "failed";
+  state.log.unshift({type:"penalty", date:dateStr, title:q.title, detail:`${expDelta} EXP（チェーン Lv.${q.chainLevel}失敗）`, ts:Date.now()});
+
+  if(q.chainLevel >= CHAIN_CAP){
+    enqueueMessage({
+      kind:"notice", tone:"danger", title:"SYSTEM: ペナルティチェーン終了",
+      lines:[`「${baseTitle(q.title)}」の代償は限界に達し、システムが強制的に鎮静化させた。`, `最終ペナルティ：${expDelta} EXP`]
+    });
+    return;
+  }
+  spawnPenaltyQuest(state, q, q.chainLevel+1, dateStr);
+}
+
+function checkPenaltyChainExpiry(){
+  if(!STATE) return;
+  const now = new Date();
+  const today = todayStr(now);
+  let changed = false;
+  STATE.quests.filter(q=>q.status==="active" && q.isPenaltyQuest).forEach(q=>{
+    const dl = questDeadlineDate(q, now);
+    if(dl && dl.getTime() < now.getTime()){
+      escalateChain(STATE, q, today);
+      changed = true;
+    }
+  });
+  if(changed){ saveState(); renderAll(); }
+}
+
+function requestSuspension(id){
+  const q = STATE.quests.find(x=>x.id===id);
+  if(!q || !q.isPenaltyQuest) return;
+  if(!confirm("システムへ休止を申請します。軽いペナルティは発生しますが、これ以上チェーンは悪化しません。よろしいですか？")) return;
+  const mult = STATE.settings.penaltyMultiplier || 1;
+  const expDelta = -Math.round(10*mult);
+  STATE.exp = Math.max(0, STATE.exp + expDelta);
+  q.status = "failed";
+  STATE.log.unshift({type:"penalty", date:todayStr(), title:q.title, detail:`休止申請により終了：${expDelta} EXP`, ts:Date.now()});
+  enqueueMessage({ kind:"notice", tone:"cyan", title:"SYSTEM: 休止を承認した", lines:["チェーンは解除された。", "次回は油断するな。"] });
+  saveState(); renderAll();
+}
+
+function bumpDifficulty(q){
+  q.rewardExp = Math.round(q.rewardExp * 1.1);
+  q.penaltyExp = Math.round(q.penaltyExp * 1.15);
+  STATE.log.unshift({type:"scaleup", date:todayStr(), title:q.title, detail:"要求水準が上昇した", ts:Date.now()});
+  toast(`SYSTEM：「${q.title}」の要求水準が上昇した`, "levelup");
+}
+
 function completeQuest(id){
   const q = STATE.quests.find(x=>x.id===id);
   if(!q) return;
@@ -619,7 +721,16 @@ function completeQuest(id){
   if(q.type==="once") q.status = "done";
 
   STATE.log.unshift({type:"complete", date:today, title:q.title, detail:`+${q.rewardExp} EXP${q.statTag?` / ${state_label(q.statTag)} +${q.rewardStat}`:""}`, ts:Date.now()});
-  toast(`クエスト達成：${q.title}`, "complete");
+
+  if(q.isPenaltyQuest){
+    toast(`ペナルティクエストを乗り越えた：${q.title}`, "complete");
+    enqueueMessage({ kind:"notice", tone:"gold", title:"SYSTEM: 代償を完遂した", lines:["チェーンは解除された。", "適応は確認された。"] });
+  }else{
+    toast(`クエスト達成：${q.title}`, "complete");
+    if(q.scalingEnabled && q.type==="daily" && q.streak>0 && q.streak % 3 === 0){
+      bumpDifficulty(q);
+    }
+  }
 
   if(q.rewardItem){
     const item = {id:uid(), name:q.rewardItem.name, rarity:q.rewardItem.rarity||"common", obtainedDate:today, source:q.title};
@@ -705,7 +816,7 @@ function renderQuests(){
   const list = document.getElementById("quest-list");
   const active = STATE.quests.filter(q=>q.status==="active" || (q.type==="once" && q.status==="done"));
   if(active.length===0){
-    list.innerHTML = `<div class="empty-state">まだクエストがありません。<br>「＋ 追加」または「AI発行」から最初のクエストを設定しましょう。</div>`;
+    list.innerHTML = `<div class="empty-state">まだクエストがありません。<br>「＋ 追加」または「発行を要求」から最初のクエストを設定しましょう。</div>`;
   }else{
     const today = todayStr();
     list.innerHTML = active.map(q=>{
@@ -713,22 +824,23 @@ function renderQuests(){
       const deadline = questDeadlineDate(q);
       const ms = deadline ? deadline.getTime()-Date.now() : null;
       return `
-      <div class="quest-card ${done?"done":""}" data-id="${q.id}">
+      <div class="quest-card ${done?"done":""} ${q.isPenaltyQuest?"penalty-quest":""}" data-id="${q.id}">
         <div class="row1">
           <div class="title">${escapeHtml(q.title)}</div>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            ${q.origin==="system"?`<span class="quest-tag system-tag">SYSTEM</span>`:""}
             ${q.statTag?`<span class="quest-tag">${STATE.statLabels[q.statTag]}</span>`:""}
             ${q.rewardItem?`<span class="quest-tag item-tag">◆ ${escapeHtml(q.rewardItem.name)}</span>`:""}
           </div>
         </div>
         <div class="quest-meta">
-          <span>${q.type==="daily"?"デイリー":"単発"}</span>
+          <span>${q.type==="daily"?"デイリー":(q.isPenaltyQuest?"ペナルティ":"単発")}</span>
           ${ms!==null?`<span class="countdown ${ms<3*3600*1000?"warn":""}" data-deadline="${deadline.getTime()}">${done?"完了済み":fmtCountdown(ms)}</span>`:""}
           ${q.streak>0?`<span>連続 ${q.streak}</span>`:""}
         </div>
         <div class="quest-actions">
           <button class="btn primary complete-btn" data-id="${q.id}" ${done?"disabled":""}>${done?"達成済み":"達成する"}</button>
-          <button class="btn ghost edit-btn" data-id="${q.id}">編集</button>
+          ${q.isPenaltyQuest && !done?`<button class="btn danger suspend-btn" data-id="${q.id}">休止を申請</button>`:`<button class="btn ghost edit-btn" data-id="${q.id}">編集</button>`}
           <button class="btn ghost delete-btn" data-id="${q.id}">削除</button>
         </div>
       </div>`;
@@ -737,6 +849,7 @@ function renderQuests(){
     list.querySelectorAll(".complete-btn").forEach(b=>b.addEventListener("click",()=>completeQuest(b.dataset.id)));
     list.querySelectorAll(".delete-btn").forEach(b=>b.addEventListener("click",()=>deleteQuest(b.dataset.id)));
     list.querySelectorAll(".edit-btn").forEach(b=>b.addEventListener("click",()=>openQuestModal(b.dataset.id)));
+    list.querySelectorAll(".suspend-btn").forEach(b=>b.addEventListener("click",()=>requestSuspension(b.dataset.id)));
   }
   renderActivityRecent();
 }
@@ -779,7 +892,7 @@ function renderLog(){
     box.innerHTML = `<div class="empty-state">まだ記録がありません。</div>`;
     return;
   }
-  const icon = {complete:"✓", penalty:"!", levelup:"★", item:"◆"};
+  const icon = {complete:"✓", penalty:"!", levelup:"★", item:"◆", scaleup:"▲"};
   box.innerHTML = STATE.log.slice(0,150).map(l=>`
     <div class="log-item ${l.type}">
       <div class="icon">${icon[l.type]||"-"}</div>
@@ -818,9 +931,24 @@ function renderSettings(){
   });
 }
 
+const AI_ENDPOINT_GUIDANCE = {
+  anthropic: null,
+  openai: { label:"エンドポイントURL（OpenAI互換API。Fujitsu ChatAI等の独自エンドポイントもここに）", placeholder:"例：https://your-chatai.example.com/v1/chat/completions" },
+  gemini: { label:"エンドポイントURL（通常は空欄でOK。上書き時のみ generateContent までのフルURLを入力）", placeholder:"空欄推奨（例を上書きする場合のみ入力）" },
+  ollama: { label:"エンドポイントURL（同一ネットワーク上のOllamaサーバー）", placeholder:"例：http://192.168.1.10:11434/api/chat（空欄なら http://localhost:11434/api/chat）" },
+};
 function toggleAiFieldsVisibility(provider){
   document.getElementById("ai-maxtokens-row").style.display = provider==="openai" ? "block":"none";
   document.getElementById("ai-key-row").style.display = provider==="ollama" ? "none":"block";
+  const endpointRow = document.getElementById("ai-endpoint-row");
+  const guidance = AI_ENDPOINT_GUIDANCE[provider];
+  if(!guidance){
+    endpointRow.style.display = "none";
+  }else{
+    endpointRow.style.display = "block";
+    document.getElementById("ai-endpoint-label").textContent = guidance.label;
+    document.getElementById("in-ai-endpoint").placeholder = guidance.placeholder;
+  }
 }
 
 function renderActivityRecent(){
@@ -882,31 +1010,13 @@ function sanitizeAIQuest(raw){
   const reason = raw && typeof raw.reason === "string" ? raw.reason.slice(0,80) : "";
   return { title, type, statTag, deadlineTime, rewardExp, rewardStat, penaltyExp, penaltyStat, reason };
 }
-function renderQuestProposalBody(quests){
-  return `<div class="proposal-list">` + quests.map((raw,idx)=>{
-    const safe = sanitizeAIQuest(raw);
-    return `
-    <div class="proposal-card">
-      <div class="phead">
-        <input type="checkbox" class="proposal-check" data-idx="${idx}" checked>
-        <div style="flex:1;">
-          <div style="font-size:14px;">${escapeHtml(safe.title)}</div>
-          <div class="pmeta">${safe.type==="daily"?"デイリー":"単発"} ・ 期限 ${escapeHtml(safe.deadlineTime)}${safe.statTag?` ・ ${STATE.statLabels[safe.statTag]}`:""} ・ 報酬 +${safe.rewardExp}EXP ・ ペナルティ ${safe.penaltyExp}EXP</div>
-          ${safe.reason?`<div class="preason">${escapeHtml(safe.reason)}</div>`:""}
-        </div>
-      </div>
-    </div>`;
-  }).join("") + `</div>`;
-}
 function renderMessageBox(msg){
   const root = document.getElementById("modal-root");
   const wrap = document.createElement("div");
   wrap.className = "modal-backdrop";
   const tone = msg.tone || "cyan";
   let bodyHtml;
-  if(msg.kind === "quest-proposal"){
-    bodyHtml = renderQuestProposalBody(msg.quests);
-  }else if(msg.lines){
+  if(msg.lines){
     bodyHtml = `<div class="msgbox-body">${msg.lines.map(l=>`<div>${escapeHtml(l)}</div>`).join("")}</div>`;
   }else{
     bodyHtml = `<div class="msgbox-body">${escapeHtml(msg.body||"")}</div>`;
@@ -920,16 +1030,7 @@ function renderMessageBox(msg){
   root.appendChild(wrap);
 
   wrap.querySelector("#msgbox-confirm").addEventListener("click", ()=>{
-    if(msg.kind === "quest-proposal"){
-      const checked = [...wrap.querySelectorAll(".proposal-check:checked")].map(c=>Number(c.dataset.idx));
-      checked.forEach(idx=>{
-        const safe = sanitizeAIQuest(msg.quests[idx]);
-        STATE.quests.push(quest(safe.title, safe.type, safe.statTag, safe, todayStr()));
-      });
-      saveState(); renderAll();
-    }else if(msg.onConfirm){
-      msg.onConfirm();
-    }
+    if(msg.onConfirm) msg.onConfirm();
     wrap.remove();
     showNextMessage();
   });
@@ -975,12 +1076,11 @@ async function callAIProvider(systemPrompt, userPrompt){
     return data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : "";
   }
   if(ai.provider === "gemini"){
-    const model = ai.model || "gemini-2.5-flash";
-    const base = ai.endpoint || `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-    const endpoint = base + (base.includes("?") ? "&" : "?") + `key=${encodeURIComponent(ai.apiKey)}`;
+    const model = ai.model || "gemini-3.5-flash";
+    const endpoint = ai.endpoint || `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     const res = await fetch(endpoint, {
       method:"POST",
-      headers:{"content-type":"application/json"},
+      headers:{"content-type":"application/json", "x-goog-api-key": ai.apiKey},
       body: JSON.stringify({ contents:[{ parts:[{text: systemPrompt + "\n\n" + userPrompt}] }] })
     });
     if(!res.ok) throw new Error(`Gemini API error: ${res.status}`);
@@ -1016,37 +1116,93 @@ function extractJson(text){
   return JSON.parse(sliced.trim());
 }
 
-async function generateAIQuests(){
-  const ai = STATE.settings.ai || {};
-  if(!ai.provider || (ai.provider!=="ollama" && !ai.apiKey)){
-    toast("先に設定タブでAIプロバイダを設定してください");
-    switchTab("settings");
-    return;
+const FALLBACK_QUEST_POOL = [
+  { title:"緊急：10分間の運動", statTag:"STR", rewardExp:15, rewardStat:1, penaltyExp:-20, penaltyStat:-1, reason:"システムが怠慢を検知した" },
+  { title:"緊急：5分間の姿勢リセットと深呼吸", statTag:"FOC", rewardExp:10, rewardStat:1, penaltyExp:-15, penaltyStat:-1, reason:"集中力の低下を検知した" },
+  { title:"緊急：水を一杯飲む", statTag:"VIT", rewardExp:8, rewardStat:1, penaltyExp:-10, penaltyStat:-1, reason:"生命維持コストの怠慢を検知した" },
+  { title:"緊急：15分間の読書または学習", statTag:"INT", rewardExp:12, rewardStat:1, penaltyExp:-15, penaltyStat:-1, reason:"知力の停滞を検知した" },
+  { title:"緊急：周囲を5分間片付ける", statTag:"PER", rewardExp:10, rewardStat:1, penaltyExp:-12, penaltyStat:-1, reason:"環境の乱れを検知した" },
+  { title:"緊急：階段を使って2階分移動する", statTag:"STR", rewardExp:8, rewardStat:1, penaltyExp:-10, penaltyStat:-1, reason:"身体活動の不足を検知した" },
+];
+function pickFallbackQuests(n){
+  const pool = [...FALLBACK_QUEST_POOL];
+  const picked = [];
+  for(let i=0;i<n && pool.length>0;i++){
+    const idx = Math.floor(Math.random()*pool.length);
+    picked.push(pool.splice(idx,1)[0]);
   }
+  return picked;
+}
+function aiConfigured(){
+  const ai = STATE.settings.ai || {};
+  return !!ai.provider && (ai.provider==="ollama" || !!ai.apiKey);
+}
+
+async function issueSystemQuests(useAI, count){
+  count = count || 1;
+  let raw;
+  if(useAI && aiConfigured()){
+    try{
+      const ai = STATE.settings.ai;
+      const context = {
+        level: STATE.level,
+        stats: STATE.stats,
+        statLabels: STATE.statLabels,
+        activeQuestTitles: STATE.quests.filter(q=>q.status==="active").map(q=>q.title),
+        recentLog: STATE.log.slice(0,10).map(l=>`${l.date} [${l.type}] ${l.title}`),
+        recentActivityLog: (STATE.activityLog||[]).slice(0,7).map(a=>`${a.date}: ${a.text}`),
+        today: todayStr(),
+        requestedCount: count
+      };
+      const userMsg = `以下はユーザーの現在の状況です。新しいクエストを${count}件生成し、そのまま課してください。\n\n${JSON.stringify(context, null, 2)}`;
+      const text = await callAIProvider(AI_SYSTEM_PROMPT, userMsg);
+      const parsed = extractJson(text);
+      if(!Array.isArray(parsed) || parsed.length===0) throw new Error("empty");
+      raw = parsed.slice(0, count);
+    }catch(e){
+      console.error(e);
+      raw = pickFallbackQuests(count);
+    }
+  }else{
+    raw = pickFallbackQuests(count);
+  }
+
+  const issued = raw.map(r=>{
+    const safe = sanitizeAIQuest(r);
+    const q = quest(safe.title, safe.type, safe.statTag, {...safe, origin:"system"}, todayStr());
+    STATE.quests.push(q);
+    return safe;
+  });
+  saveState(); renderAll();
+
+  enqueueMessage({
+    kind:"notice", tone:"cyan", title:"SYSTEM: 新規クエスト発行",
+    lines: issued.map(i=>`・${i.title}${i.reason?`（${i.reason}）`:""}`)
+  });
+  if(STATE.settings.notificationsEnabled && swRegistration){
+    swRegistration.showNotification("新規クエスト発行", {body: issued.map(i=>i.title).join(" / "), icon:"icons/icon-192.png", tag:"system-new-quest"});
+  }
+}
+
+async function manualIssueRequest(){
   const btn = document.getElementById("btn-ai-quest");
   const originalLabel = btn.textContent;
-  btn.disabled = true; btn.textContent = "生成中…";
+  btn.disabled = true; btn.textContent = "発行中…";
   try{
-    const context = {
-      level: STATE.level,
-      stats: STATE.stats,
-      statLabels: STATE.statLabels,
-      activeQuestTitles: STATE.quests.filter(q=>q.status==="active").map(q=>q.title),
-      recentLog: STATE.log.slice(0,10).map(l=>`${l.date} [${l.type}] ${l.title}`),
-      recentActivityLog: (STATE.activityLog||[]).slice(0,7).map(a=>`${a.date}: ${a.text}`),
-      today: todayStr(),
-      requestedCount: ai.questCount || 2
-    };
-    const userMsg = `以下はユーザーの現在の状況です。新しいクエストを${context.requestedCount}件提案してください。\n\n${JSON.stringify(context, null, 2)}`;
-    const raw = await callAIProvider(AI_SYSTEM_PROMPT, userMsg);
-    const parsed = extractJson(raw);
-    if(!Array.isArray(parsed) || parsed.length===0) throw new Error("有効な提案が得られませんでした");
-    enqueueMessage({ kind:"quest-proposal", tone:"cyan", title:"新しいクエストの提案", quests:parsed, confirmLabel:"選択したクエストを追加" });
+    await issueSystemQuests(true, STATE.settings.ai.questCount || 1);
   }catch(e){
     console.error(e);
-    alert("AI生成に失敗しました：\n" + e.message);
+    toast("発行に失敗しました", "penalty");
   }finally{
     btn.disabled = false; btn.textContent = originalLabel;
+  }
+}
+
+function scheduleRandomSystemEvents(){
+  const count = 1 + Math.floor(Math.random()*2); // 1〜2件/日
+  for(let i=0;i<count;i++){
+    const delayMs = Math.floor(Math.random() * 14*60*60*1000) + 30*60*1000; // 30分後〜約14.5時間後
+    setTimeout(()=>{ issueSystemQuests(true, 1); }, delayMs);
   }
 }
 
@@ -1105,6 +1261,12 @@ function openQuestModal(editId){
           </select>
         </div>
       </div>
+      <div class="field">
+        <label class="radio-group" style="display:flex; align-items:center; gap:8px; border:none; padding:0; cursor:pointer;">
+          <input type="checkbox" id="qm-scaling" ${!editing||editing.scalingEnabled!==false?"checked":""} style="width:18px; height:18px; accent-color:var(--cyan); display:inline-block;">
+          <span style="color:var(--text); font-size:13px;">自動スケーリング／ペナルティチェーンを有効にする</span>
+        </label>
+      </div>
       <button class="btn primary full" id="qm-save" style="margin-top:6px;">保存</button>
       <button class="btn full" id="qm-cancel" style="margin-top:8px;">キャンセル</button>
     </div>`;
@@ -1132,14 +1294,15 @@ function openQuestModal(editId){
     const itemName = wrap.querySelector("#qm-item-name").value.trim();
     const itemRarity = wrap.querySelector("#qm-item-rarity").value;
     const rewardItem = itemName ? {name:itemName, rarity:itemRarity||"common"} : null;
+    const scalingEnabled = wrap.querySelector("#qm-scaling").checked;
 
     if(editing){
       Object.assign(editing, {title, type, deadlineTime:time, deadlineDate:type==="once"?date:null,
-        statTag, rewardExp:rexp, rewardStat:rstat, penaltyExp:pexp, penaltyStat:pstat, rewardItem});
+        statTag, rewardExp:rexp, rewardStat:rstat, penaltyExp:pexp, penaltyStat:pstat, rewardItem, scalingEnabled});
     }else{
       STATE.quests.push(quest(title, type, statTag, {
         deadlineTime:time, deadlineDate:type==="once"?date:null,
-        rewardExp:rexp, rewardStat:rstat, penaltyExp:pexp, penaltyStat:pstat, rewardItem
+        rewardExp:rexp, rewardStat:rstat, penaltyExp:pexp, penaltyStat:pstat, rewardItem, scalingEnabled
       }, todayStr()));
     }
     saveState(); renderAll();
@@ -1200,7 +1363,7 @@ function saveAiSettings(){
 ["in-ai-provider","in-ai-endpoint","in-ai-key","in-ai-model","in-ai-maxtokensparam","in-ai-count"].forEach(id=>{
   document.getElementById(id).addEventListener("change", saveAiSettings);
 });
-document.getElementById("btn-ai-quest").addEventListener("click", generateAIQuests);
+document.getElementById("btn-ai-quest").addEventListener("click", manualIssueRequest);
 document.getElementById("btn-add-quest").addEventListener("click", ()=>openQuestModal(null));
 document.getElementById("btn-save-activity").addEventListener("click", ()=>{
   const el = document.getElementById("activity-text");
@@ -1272,7 +1435,7 @@ function foregroundCheck(){
     }
   });
 }
-setInterval(()=>{ updateCountdownsOnly(); foregroundCheck(); }, 30000);
+setInterval(()=>{ updateCountdownsOnly(); foregroundCheck(); checkPenaltyChainExpiry(); }, 30000);
 
 /* ---------- boot ---------- */
 async function boot(){
@@ -1286,6 +1449,9 @@ async function boot(){
       lines:["以下のクエストが未達成でした：", ...penalties.map(p=>`・${p.title}（${p.dateStr}）`)]
     });
   }
+
+  checkPenaltyChainExpiry();
+  scheduleRandomSystemEvents();
 
   if("serviceWorker" in navigator){
     try{
